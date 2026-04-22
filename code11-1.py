@@ -58,7 +58,7 @@ def setup_network_altlinux(interface, ip, netmask, gateway, dns1, dns2):
     print(f"   ✅ DNS записаны в {iface_dir}/resolv.conf")
     
     # 4. Настройка опций интерфейса (файл options)
-    options_content = "ONBOOT=yes\nBOOTPROTO=static\n"
+    options_content = "TYPE=eth\nBOOTPROTO=static\n"
     with open('/tmp/options', 'w') as f:
         f.write(options_content)
     run_cmd(f"cp /tmp/options {iface_dir}/options")
@@ -67,6 +67,7 @@ def setup_network_altlinux(interface, ip, netmask, gateway, dns1, dns2):
     # 5. Перезапускаем сетевую службу
     print(f"\n🔄 Перезапуск сетевой службы...")
     run_cmd("systemctl restart network")
+    run_cmd("ifup {interface}")
     run_cmd("/etc/init.d/network restart")
     
     return True, f"Сеть настроена: {ip}/{cidr}"
