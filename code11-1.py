@@ -21,7 +21,7 @@ def run_cmd(cmd, sudo=True):
         return False, "", str(e)
 
 def setup_network_altlinux(interface, ip, netmask, gateway, dns1, dns2):
-    """Настраивает сеть на ALT Linux через /etc/network/ifaces"""
+    """Настраивает сеть на ALT Linux через /etc/net/ifaces"""
     
     print(f"\n🚀 Настройка сети на ALT Linux...")
     print(f"   Интерфейс: {interface}")
@@ -31,31 +31,31 @@ def setup_network_altlinux(interface, ip, netmask, gateway, dns1, dns2):
     cidr = sum(bin(int(x)).count('1') for x in netmask.split('.'))
     
     # Директория для настроек интерфейса
-    iface_dir = f"/etc/network/ifaces/{interface}"
+    iface_dir = f"/etc/net/ifaces/{interface}"
     
     # Создаем директорию если её нет
     run_cmd(f"mkdir -p {iface_dir}")
     
-    # 1. Настройка IP адреса (файл ipv4)
+    # 1. Настройка IP адреса (файл ipv4address)
     ipv4_content = f"{ip}/{cidr}\n"
-    with open('/tmp/ipv4', 'w') as f:
+    with open('/tmp/ipv4address', 'w') as f:
         f.write(ipv4_content)
-    run_cmd(f"cp /tmp/ipv4 {iface_dir}/ipv4")
-    print(f"   ✅ IP адрес записан в {iface_dir}/ipv4")
+    run_cmd(f"cp /tmp/ipv4address {iface_dir}/ipv4address")
+    print(f"   ✅ IP адрес записан в {iface_dir}/ipv4address")
     
-    # 2. Настройка маршрута по умолчанию (файл ipv4_route)
+    # 2. Настройка маршрута по умолчанию (файл ipv4route)
     route_content = f"default {gateway} - -\n"
-    with open('/tmp/ipv4_route', 'w') as f:
+    with open('/tmp/ipv4route', 'w') as f:
         f.write(route_content)
-    run_cmd(f"cp /tmp/ipv4_route {iface_dir}/ipv4_route")
-    print(f"   ✅ Маршрут записан в {iface_dir}/ipv4_route")
+    run_cmd(f"cp /tmp/ipv4route {iface_dir}/ipv4route")
+    print(f"   ✅ Маршрут записан в {iface_dir}/ipv4route")
     
-    # 3. Настройка DNS (файл resolv.conf_head)
+    # 3. Настройка DNS (файл resolv.conf)
     resolv_content = f"nameserver {dns1}\nnameserver {dns2}\n"
-    with open('/tmp/resolv.conf_head', 'w') as f:
+    with open('/tmp/resolv.conf', 'w') as f:
         f.write(resolv_content)
-    run_cmd(f"cp /tmp/resolv.conf_head {iface_dir}/resolv.conf_head")
-    print(f"   ✅ DNS записаны в {iface_dir}/resolv.conf_head")
+    run_cmd(f"cp /tmp/resolv.conf {iface_dir}/resolv.conf")
+    print(f"   ✅ DNS записаны в {iface_dir}/resolv.conf")
     
     # 4. Настройка опций интерфейса (файл options)
     options_content = "ONBOOT=yes\nBOOTPROTO=static\n"
@@ -320,9 +320,9 @@ def main():
     print(f"   • Пользователь: {username}")
     
     print("\n📁 Файлы конфигурации:")
-    print(f"   • /etc/network/ifaces/{interface}/ipv4")
-    print(f"   • /etc/network/ifaces/{interface}/ipv4_route")
-    print(f"   • /etc/network/ifaces/{interface}/resolv.conf_head")
+    print(f"   • /etc/network/ifaces/{interface}/ipv4address")
+    print(f"   • /etc/network/ifaces/{interface}/ipv4route")
+    print(f"   • /etc/network/ifaces/{interface}/resolv.conf")
     print(f"   • /etc/network/ifaces/{interface}/options")
     
     print("\n💡 Для проверки используйте:")
