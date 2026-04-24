@@ -77,9 +77,7 @@ def setup_dhcp_altlinux(interface):
     run_cmd(f"mkdir -p {iface_dir}")
     
     # Создаем файл options для DHCP
-    options_content = """ONBOOT=yes
-BOOTPROTO=dhcp
-"""
+    options_content = """BOOTPROTO=dhcp"""
     with open('/tmp/options', 'w') as f:
         f.write(options_content)
     run_cmd(f"cp /tmp/options {iface_dir}/options")
