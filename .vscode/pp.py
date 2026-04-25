@@ -1,466 +1,308 @@
 #!/usr/bin/env python3
+# modules/monitor.py
+
 """
-Исправленная автоматическая настройка DNS-сервера
+Модуль мониторинга состояния серверов
+Собирает метрики: CPU, RAM, HDD, Network, uptime, активные процессы
 """
 
+import psutil
+import socket
 import subprocess
-import os
-import sys
-from pathlib import Path
+import json
 from datetime import datetime
+from typing import Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import paramiko
 
-class DNSAutomation:
-    def __init__(self):
-        self.package_manager = self._detect_package_manager()
-        self.service_name = 'named'
-        
-    def _detect_package_manager(self):
-        """Определяет пакетный менеджер с диагностикой"""
-        print("🔍 Диагностика системы...")
-        
-        # Проверка наличия команд
-        commands_to_check = ['dnf', 'yum', 'apt', 'apt-get', 'microdnf']
-        
-        for cmd in commands_to_check:
-            result = subprocess.run(['which', cmd], capture_output=True, text=True)
-            if result.returncode == 0:
-                print(f"  ✅ Найден: {cmd}")
-                return cmd
-        
-        # Дополнительная диагностика
-        print("\n📋 Информация о системе:")
-        
-        # Проверка /etc/os-release
-        if os.path.exists('/etc/os-release'):
-            subprocess.run(['cat', '/etc/os-release'], capture_output=False)
-        
-        # Проверка /etc/redhat-release
-        if os.path.exists('/etc/redhat-release'):
-            subprocess.run(['cat', '/etc/redhat-release'], capture_output=False)
-        
-        # Проверка PATH
-        print(f"\nPATH: {os.environ.get('PATH', 'Not set')}")
-        
-        return None
+class ServerMonitor:
+    """Класс для мониторинга серверов"""
     
-    def install_bind(self):
-        """Устанавливает DNS сервер"""
-        print("\n" + "=" * 60)
-        print("1. УСТАНОВКА DNS СЕРВЕРА")
-        print("=" * 60)
+    def __init__(self, config: Dict):
+        """
+        Инициализация монитора
+        :param config: конфигурация с серверами и порогами
+        """
+        self.config = config
+        self.thresholds = config.get('thresholds', {})
+        self.results = {}
         
-        if not self.package_manager:
-            print("❌ Не удалось определить пакетный менеджер")
-            print("\n💡 Установите вручную одной из команд:")
-            print("   sudo dnf install -y bind bind-utils      # RHEL/CentOS/Fedora")
-            print("   sudo yum install -y bind bind-utils      # CentOS 7")
-            print("   sudo apt install -y bind9 bind9utils     # Ubuntu/Debian")
+    def get_local_metrics(self) -> Dict:
+        """Сбор метрик локального сервера"""
+        metrics = {
+            'timestamp': datetime.now().isoformat(),
+            'hostname': socket.gethostname(),
+            'cpu': {
+                'percent': psutil.cpu_percent(interval=1),
+                'cores': psutil.cpu_count(),
+                'per_cpu': psutil.cpu_percent(interval=1, percpu=True)
+            },
+            'memory': {
+                'total_gb': round(psutil.virtual_memory().total / (1024**3), 2),
+                'available_gb': round(psutil.virtual_memory().available / (1024**3), 2),
+                'percent': psutil.virtual_memory().percent
+            },
+            'disk': [],
+            'network': [],
+            'processes': self._get_top_processes(5),
+            'uptime': self._get_uptime()
+        }
+        
+        # Сбор информации о дисках
+        for partition in psutil.disk_partitions():
+            try:
+                usage = psutil.disk_usage(partition.mountpoint)
+                metrics['disk'].append({
+                    'device': partition.device,
+                    'mountpoint': partition.mountpoint,
+                    'total_gb': round(usage.total / (1024**3), 2),
+                    'used_gb': round(usage.used / (1024**3), 2),
+                    'free_gb': round(usage.free / (1024**3), 2),
+                    'percent': usage.percent
+                })
+            except PermissionError:
+                continue
+        
+        # Сбор сетевой информации
+        for iface, stats in psutil.net_io_counters(pernic=True).items():
+            metrics['network'].append({
+                'interface': iface,
+                'bytes_sent_mb': round(stats.bytes_sent / (1024**2), 2),
+                'bytes_recv_mb': round(stats.bytes_recv / (1024**2), 2),
+                'packets_sent': stats.packets_sent,
+                'packets_recv': stats.packets_recv
+            })
+        
+        return metrics
+    
+    def _get_top_processes(self, count: int = 5) -> List[Dict]:
+        """Получение топ процессов по CPU"""
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                pinfo = proc.info
+                processes.append(pinfo)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        processes.sort(key=lambda x: x.get('cpu_percent', 0), reverse=True)
+        return processes[:count]
+    
+    def _get_uptime(self) -> str:
+        """Получение времени работы системы"""
+        boot_time = datetime.fromtimestamp(psutil.boot_time())
+        uptime = datetime.now() - boot_time
+        days = uptime.days
+        hours = uptime.seconds // 3600
+        minutes = (uptime.seconds % 3600) // 60
+        
+        return f"{days}д {hours}ч {minutes}м"
+    
+    def get_remote_metrics(self, host: str, port: int, username: str, 
+                           key_path: str) -> Optional[Dict]:
+        """Сбор метрик с удаленного сервера через SSH"""
+        try:
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(host, port=port, username=username, key_filename=key_path)
             
-            response = input("\nУстановить вручную? (y/n): ")
-            if response.lower() == 'y':
-                print("\nПожалуйста, выполните установку в другом терминале,")
-                print("затем вернитесь и нажмите Enter")
-                input("Нажмите Enter после установки...")
-                
-                # Проверяем, установлен ли bind
-                if os.path.exists('/usr/sbin/named') or os.path.exists('/usr/sbin/named-checkconf'):
-                    print("✅ Bind установлен")
-                    return True
-                else:
-                    print("❌ Bind не обнаружен")
-                    return False
-            return False
-        
-        # Установка через пакетный менеджер
-        if self.package_manager in ['dnf', 'yum', 'microdnf']:
-            cmd = [self.package_manager, 'install', '-y', 'bind', 'bind-utils']
-        else:
-            subprocess.run(['apt', 'update'], capture_output=True)
-            cmd = ['apt', 'install', '-y', 'bind9', 'bind9utils', 'dnsutils']
-            self.service_name = 'bind9'
-        
-        print(f"  📦 Установка через {self.package_manager}...")
-        print(f"  Команда: {' '.join(cmd)}")
-        
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print("  ✅ Установка завершена")
-            return True
-        else:
-            print(f"  ❌ Ошибка: {result.stderr}")
-            return False
+            # Сбор команд для выполнения
+            commands = {
+                'cpu': "top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1",
+                'memory': "free -m | awk 'NR==2{printf \"%.2f\", $3*100/$2 }'",
+                'disk': "df -h / | awk 'NR==2{print $5}' | tr -d '%'",
+                'uptime': "uptime -p",
+                'hostname': "hostname",
+                'load': "uptime | awk -F'load average:' '{print $2}'"
+            }
+            
+            metrics = {
+                'timestamp': datetime.now().isoformat(),
+                'host': host,
+            }
+            
+            for key, cmd in commands.items():
+                stdin, stdout, stderr = ssh.exec_command(cmd)
+                metrics[key] = stdout.read().decode().strip()
+            
+            ssh.close()
+            return metrics
+            
+        except Exception as e:
+            print(f"Ошибка подключения к {host}: {e}")
+            return None
     
-    def create_directories(self):
-        """Создает необходимые директории"""
-        print("\n" + "=" * 60)
-        print("2. СОЗДАНИЕ ДИРЕКТОРИЙ")
-        print("=" * 60)
+    def check_thresholds(self, metrics: Dict) -> List[Dict]:
+        """Проверка метрик на превышение порогов"""
+        alerts = []
         
-        dirs = [
-            '/etc/bind',
-            '/etc/bind/zones',
-            '/var/log/named'
-        ]
+        # Проверка CPU
+        cpu_percent = metrics.get('cpu', {}).get('percent', 0)
+        if cpu_percent > self.thresholds.get('cpu_warning', 80):
+            alerts.append({
+                'level': 'WARNING',
+                'metric': 'CPU',
+                'value': cpu_percent,
+                'threshold': self.thresholds.get('cpu_warning'),
+                'message': f"CPU usage is {cpu_percent}%"
+            })
         
-        for d in dirs:
-            Path(d).mkdir(parents=True, exist_ok=True)
-            print(f"  ✅ {d}")
+        if cpu_percent > self.thresholds.get('cpu_critical', 90):
+            alerts[-1]['level'] = 'CRITICAL'
         
-        return True
+        # Проверка памяти
+        mem_percent = metrics.get('memory', {}).get('percent', 0)
+        if mem_percent > self.thresholds.get('memory_warning', 85):
+            alerts.append({
+                'level': 'WARNING',
+                'metric': 'Memory',
+                'value': mem_percent,
+                'threshold': self.thresholds.get('memory_warning'),
+                'message': f"Memory usage is {mem_percent}%"
+            })
+        
+        # Проверка дисков
+        for disk in metrics.get('disk', []):
+            if disk.get('percent', 0) > self.thresholds.get('disk_warning', 85):
+                alerts.append({
+                    'level': 'WARNING',
+                    'metric': f"Disk {disk.get('mountpoint')}",
+                    'value': disk.get('percent'),
+                    'threshold': self.thresholds.get('disk_warning'),
+                    'message': f"Disk {disk.get('mountpoint')} is {disk.get('percent')}% full"
+                })
+        
+        return alerts
     
-    def create_zone_file(self, domain, dns_ip, admin_email):
-        """Создает файл прямой зоны"""
-        print("\n" + "=" * 60)
-        print("3. СОЗДАНИЕ ЗОНОВОГО ФАЙЛА")
-        print("=" * 60)
+    def monitor_all_servers(self) -> Dict:
+        """Мониторинг всех серверов из конфигурации"""
+        results = {}
         
-        serial = datetime.now().strftime('%Y%m%d01')
-        admin_email = admin_email.replace('@', '.')
+        # Локальный мониторинг
+        local_metrics = self.get_local_metrics()
+        hostname = local_metrics['hostname']
+        results[hostname] = {
+            'metrics': local_metrics,
+            'alerts': self.check_thresholds(local_metrics)
+        }
         
-        # Корректируем домен - убираем www если он есть
-        if domain.startswith('www.'):
-            domain = domain[4:]
-            print(f"  ℹ️ Домен скорректирован: {domain}")
+        # Удаленный мониторинг (параллельно)
+        remote_servers = self.config.get('servers', [])
         
-        zone_content = f"""$TTL 3600
-@       IN SOA  ns1.{domain}. {admin_email}. (
-    {serial}
-    3600
-    1800
-    604800
-    3600
-)
-
-; Name Servers
-@       IN NS   ns1.{domain}.
-
-; A Records
-@       IN A    {dns_ip}
-ns1     IN A    {dns_ip}
-www     IN A    {dns_ip}
-
-; Additional records (add more as needed)
-; mail    IN A    192.168.1.30
-; files   IN A    192.168.1.40
-"""
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = {}
+            for server in remote_servers:
+                future = executor.submit(
+                    self.get_remote_metrics,
+                    server['host'],
+                    server.get('port', 22),
+                    server['username'],
+                    server['key_path']
+                )
+                futures[future] = server['host']
+            
+            for future in as_completed(futures):
+                host = futures[future]
+                try:
+                    metrics = future.result(timeout=30)
+                    if metrics:
+                        results[host] = {
+                            'metrics': metrics,
+                            'alerts': self._check_remote_thresholds(metrics)
+                        }
+                except Exception as e:
+                    results[host] = {
+                        'error': str(e),
+                        'alerts': [{
+                            'level': 'CRITICAL',
+                            'message': f"Connection failed: {e}"
+                        }]
+                    }
         
-        zone_file = f"/etc/bind/zones/db.{domain}"
-        with open(zone_file, 'w') as f:
-            f.write(zone_content)
-        
-        print(f"  ✅ Создан: {zone_file}")
-        
-        # Проверка зоны
-        result = subprocess.run(['named-checkzone', domain, zone_file], 
-                               capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print("  ✅ Зона валидна")
-        else:
-            print(f"  ⚠️ {result.stderr}")
-        
-        return True
+        return results
     
-    def create_reverse_zone(self, network, dns_ip, domain):
-        """Создает файл обратной зоны"""
-        print("\n" + "=" * 60)
-        print("4. СОЗДАНИЕ ОБРАТНОЙ ЗОНЫ")
-        print("=" * 60)
+    def _check_remote_thresholds(self, metrics: Dict) -> List[Dict]:
+        """Проверка порогов для удаленных метрик"""
+        alerts = []
         
-        # Корректируем сеть - убираем последний октет если есть
-        if network.count('.') == 3:
-            network_parts = network.split('.')
-            network = f"{network_parts[0]}.{network_parts[1]}.{network_parts[2]}"
-            print(f"  ℹ️ Сеть скорректирована: {network}")
-        else:
-            network_parts = network.split('.')
+        try:
+            cpu = float(metrics.get('cpu', 0))
+            if cpu > self.thresholds.get('cpu_warning', 80):
+                alerts.append({
+                    'level': 'WARNING',
+                    'metric': 'CPU',
+                    'value': cpu,
+                    'message': f"Remote CPU usage is {cpu}%"
+                })
+        except:
+            pass
         
-        last_octet = dns_ip.split('.')[3]
-        serial = datetime.now().strftime('%Y%m%d01')
-        
-        reverse_content = f"""$TTL 3600
-@       IN SOA  ns1.{domain}. admin.{domain}. (
-    {serial}
-    3600
-    1800
-    604800
-    3600
-)
-
-@       IN NS   ns1.{domain}.
-
-{last_octet} IN PTR ns1.{domain}.
-"""
-        
-        reverse_file = f"/etc/bind/zones/db.{network}"
-        with open(reverse_file, 'w') as f:
-            f.write(reverse_content)
-        
-        print(f"  ✅ Создан: {reverse_file}")
-        return True
+        return alerts
     
-    def configure_named(self, domain, dns_ip, network):
-        """Настраивает named.conf"""
-        print("\n" + "=" * 60)
-        print("5. НАСТРОЙКА named.conf")
-        print("=" * 60)
+    def generate_report(self, monitor_results: Dict) -> str:
+        """Генерация отчета по результатам мониторинга"""
+        report = []
+        report.append("=" * 80)
+        report.append("ОТЧЕТ ПО МОНИТОРИНГУ СЕРВЕРОВ")
+        report.append(f"Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        report.append("=" * 80)
         
-        # Корректируем сеть для обратной зоны
-        if network.count('.') == 3:
-            network_parts = network.split('.')
-            network_prefix = f"{network_parts[0]}.{network_parts[1]}.{network_parts[2]}"
+        for server, data in monitor_results.items():
+            report.append(f"\n📊 СЕРВЕР: {server}")
+            report.append("-" * 40)
+            
+            if 'error' in data:
+                report.append(f"❌ ОШИБКА: {data['error']}")
+                continue
+            
+            metrics = data.get('metrics', {})
+            report.append(f"  CPU: {metrics.get('cpu', 'N/A')}%")
+            report.append(f"  Память: {metrics.get('memory', 'N/A')}%")
+            report.append(f"  Диск: {metrics.get('disk', 'N/A')}%")
+            report.append(f"  Uptime: {metrics.get('uptime', 'N/A')}")
+            
+            # Алерты
+            alerts = data.get('alerts', [])
+            if alerts:
+                report.append("  ⚠️ АКТИВНЫЕ АЛЕРТЫ:")
+                for alert in alerts:
+                    report.append(f"    - [{alert['level']}] {alert['message']}")
         
-        # Бэкап существующего конфига
-        if os.path.exists('/etc/named.conf'):
-            backup = f"/etc/named.conf.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            os.rename('/etc/named.conf', backup)
-            print(f"  📁 Бэкап: {backup}")
+        report.append("\n" + "=" * 80)
         
-        config_content = f"""options {{
-    listen-on port 53 {{ any; }};
-    listen-on-v6 port 53 {{ none; }};
-    directory "/var/named";
-    allow-recursion {{ 127.0.0.0/8; {network}.0/24; }};
-    allow-query {{ any; }};
-    forwarders {{
-        8.8.8.8;
-        8.8.4.4;
-    }};
-    dnssec-validation yes;
-    allow-transfer {{ none; }};
-}};
+        return "\n".join(report)
 
-logging {{
-    channel default_log {{
-        file "/var/log/named/named.log" versions 3 size 20m;
-        severity dynamic;
-        print-time yes;
-    }};
-    category default {{ default_log; }};
-}};
 
-zone "{domain}" {{
-    type master;
-    file "/etc/bind/zones/db.{domain}";
-}};
-
-zone "{network_prefix}.in-addr.arpa" {{
-    type master;
-    file "/etc/bind/zones/db.{network_prefix}";
-}};
-
-include "/etc/named.root.key";
-"""
-        
-        with open('/etc/named.conf', 'w') as f:
-            f.write(config_content)
-        
-        print("  ✅ Создан /etc/named.conf")
-        
-        # Проверка конфигурации
-        result = subprocess.run(['named-checkconf'], capture_output=True, text=True)
-        if result.returncode == 0:
-            print("  ✅ Конфигурация валидна")
-        else:
-            print(f"  ⚠️ {result.stderr}")
-        
-        return True
+# Скрипт для cron запуска
+def main():
+    """Точка входа для периодического мониторинга"""
+    import yaml
     
-    def configure_firewall(self):
-        """Настраивает фаервол"""
-        print("\n" + "=" * 60)
-        print("6. НАСТРОЙКА ФАЕРВОЛА")
-        print("=" * 60)
-        
-        # Firewalld
-        if os.path.exists('/usr/bin/firewall-cmd'):
-            subprocess.run(['firewall-cmd', '--permanent', '--add-service=dns'], 
-                          capture_output=True)
-            subprocess.run(['firewall-cmd', '--reload'], capture_output=True)
-            print("  ✅ Настроен firewalld")
-            return True
-        
-        # UFW
-        if os.path.exists('/usr/bin/ufw'):
-            subprocess.run(['ufw', 'allow', '53/tcp'], capture_output=True)
-            subprocess.run(['ufw', 'allow', '53/udp'], capture_output=True)
-            print("  ✅ Настроен ufw")
-            return True
-        
-        # iptables
-        subprocess.run(['iptables', '-A', 'INPUT', '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT'], 
-                      capture_output=True)
-        subprocess.run(['iptables', '-A', 'INPUT', '-p', 'udp', '--dport', '53', '-j', 'ACCEPT'],
-                      capture_output=True)
-        print("  ✅ Настроен iptables")
-        
-        return True
+    # Загрузка конфигурации
+    with open('/opt/automation/config/config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
     
-    def start_service(self):
-        """Запускает DNS сервис"""
-        print("\n" + "=" * 60)
-        print("7. ЗАПУСК DNS СЕРВЕРА")
-        print("=" * 60)
-        
-        # Определяем правильное имя сервиса
-        if os.path.exists('/usr/lib/systemd/system/named.service'):
-            service = 'named'
-        elif os.path.exists('/usr/lib/systemd/system/bind9.service'):
-            service = 'bind9'
-        else:
-            service = self.service_name
-        
-        print(f"  Сервис: {service}")
-        
-        # Enable and start
-        subprocess.run(['systemctl', 'enable', service], capture_output=True)
-        subprocess.run(['systemctl', 'restart', service], capture_output=True)
-        
-        # Check status
-        result = subprocess.run(['systemctl', 'is-active', service], 
-                               capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print(f"  ✅ {service} запущен")
-            return True
-        else:
-            print(f"  ❌ {service} не запущен")
-            # Показываем статус для диагностики
-            subprocess.run(['systemctl', 'status', service], capture_output=False)
-            return False
+    # Инициализация монитора
+    monitor = ServerMonitor(config)
     
-    def test_dns(self, domain, dns_ip):
-        """Тестирует DNS сервер"""
-        print("\n" + "=" * 60)
-        print("8. ТЕСТИРОВАНИЕ")
-        print("=" * 60)
-        
-        # Корректируем домен
-        if domain.startswith('www.'):
-            domain = domain[4:]
-        
-        # Ждем немного для запуска сервера
-        import time
-        time.sleep(2)
-        
-        # Тест с nslookup
-        result = subprocess.run(['nslookup', domain, '127.0.0.1'], 
-                               capture_output=True, text=True)
-        
-        if domain in result.stdout:
-            print(f"  ✅ nslookup: {domain} -> OK")
-        else:
-            print(f"  ⚠️ nslookup: {result.stdout[:200] if result.stdout else 'No output'}")
-        
-        # Тест с dig
-        result = subprocess.run(['dig', f'@{dns_ip}', domain, '+short'], 
-                               capture_output=True, text=True)
-        
-        if result.stdout.strip():
-            print(f"  ✅ dig: {domain} -> {result.stdout.strip()}")
-        
-        # Тест www
-        result = subprocess.run(['dig', f'@{dns_ip}', f'www.{domain}', '+short'], 
-                               capture_output=True, text=True)
-        
-        if result.stdout.strip():
-            print(f"  ✅ dig: www.{domain} -> {result.stdout.strip()}")
-        
-        return True
+    # Запуск мониторинга
+    results = monitor.monitor_all_servers()
     
-    def run(self):
-        """Запуск полной автоматизации"""
-        print("\n" + "=" * 60)
-        print("🚀 АВТОМАТИЧЕСКАЯ НАСТРОЙКА DNS СЕРВЕРА")
-        print("=" * 60)
-        
-        # Проверка прав
-        if os.geteuid() != 0:
-            print("❌ Запустите с правами root: sudo python3 pp.py")
-            return False
-        
-        # Ввод параметров с подсказками
-        print("\n📋 ВВЕДИТЕ ПАРАМЕТРЫ:")
-        print("-" * 40)
-        print("Пример: домен = mycompany.local, IP = 192.168.1.10, сеть = 192.168.1")
-        print()
-        
-        domain = input("Домен (например, mycompany.local): ").strip()
-        if not domain:
-            domain = "mycompany.local"
-        
-        # Убираем www если ввели
-        if domain.startswith('www.'):
-            domain = domain[4:]
-            print(f"  (исправлено: {domain})")
-        
-        dns_ip = input(f"IP адрес этого сервера: ").strip()
-        if not dns_ip:
-            dns_ip = "192.168.1.10"
-        
-        admin_email = input("Email администратора: ").strip()
-        if not admin_email:
-            admin_email = "admin@example.com"
-        
-        network = input("Сеть (первые 3 октета, например 192.168.1): ").strip()
-        if not network:
-            network = "192.168.1"
-        
-        print(f"\n📋 НАСТРОЙКИ:")
-        print(f"  • Домен: {domain}")
-        print(f"  • IP сервера: {dns_ip}")
-        print(f"  • Email: {admin_email}")
-        print(f"  • Сеть: {network}")
-        
-        confirm = input("\nПродолжить установку? (y/n): ").strip().lower()
-        if confirm != 'y':
-            print("❌ Установка отменена")
-            return False
-        
-        # Выполнение шагов
-        steps = [
-            self.install_bind,
-            self.create_directories,
-            lambda: self.create_zone_file(domain, dns_ip, admin_email),
-            lambda: self.create_reverse_zone(network, dns_ip, domain),
-            lambda: self.configure_named(domain, dns_ip, network),
-            self.configure_firewall,
-            self.start_service,
-            lambda: self.test_dns(domain, dns_ip)
-        ]
-        
-        for step in steps:
-            if not step():
-                print("\n❌ Ошибка на одном из этапов")
-                print("\n💡 Попробуйте установить вручную:")
-                print("   sudo dnf install -y bind bind-utils")
-                print("   sudo systemctl start named")
-                return False
-        
-        # Финальный вывод
-        print("\n" + "=" * 60)
-        print("✅ DNS СЕРВЕР УСПЕШНО НАСТРОЕН!")
-        print("=" * 60)
-        print(f"""
-📋 ИНФОРМАЦИЯ:
-  • DNS сервер: {dns_ip}
-  • Домен: {domain}
-  • Конфиг: /etc/named.conf
-  • Зоны: /etc/bind/zones/
-
-💡 ПРОВЕРКА РАБОТЫ:
-  nslookup {domain} {dns_ip}
-  nslookup www.{domain} {dns_ip}
-  dig @{dns_ip} {domain}
-
-🔧 НАСТРОЙКА КЛИЕНТОВ:
-  На других компьютерах укажите DNS: {dns_ip}
-""")
-        
-        return True
+    # Сохранение результатов
+    report = monitor.generate_report(results)
+    with open(f'/opt/automation/logs/monitor_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log', 'w') as f:
+        f.write(report)
+    
+    # Отправка алертов через notifier
+    all_alerts = []
+    for server, data in results.items():
+        all_alerts.extend(data.get('alerts', []))
+    
+    if all_alerts:
+        from modules.notifier import Notifier
+        notifier = Notifier(config.get('notifications', {}))
+        notifier.send_alerts(all_alerts)
 
 
 if __name__ == '__main__':
-    dns = DNSAutomation()
-    dns.run()
+    main()
