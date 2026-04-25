@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Автоматическая настройка DNS-сервера (Bind9) на Linux
-Поддерживает: dnf (RHEL 8+, CentOS 8+, Fedora, AlmaLinux, Rocky)
+Исправленная автоматическая настройка DNS-сервера
 """
 
 import subprocess
@@ -16,57 +15,87 @@ class DNSAutomation:
         self.service_name = 'named'
         
     def _detect_package_manager(self):
-        """Определяет пакетный менеджер"""
-        if os.path.exists('/usr/bin/dnf') or os.path.exists('/bin/dnf'):
-            return 'dnf'
-        if os.path.exists('/usr/bin/yum') or os.path.exists('/bin/yum'):
-            return 'yum'
-        if os.path.exists('/usr/bin/apt') or os.path.exists('/bin/apt'):
-            return 'apt'
+        """Определяет пакетный менеджер с диагностикой"""
+        print("🔍 Диагностика системы...")
+        
+        # Проверка наличия команд
+        commands_to_check = ['dnf', 'yum', 'apt', 'apt-get', 'microdnf']
+        
+        for cmd in commands_to_check:
+            result = subprocess.run(['which', cmd], capture_output=True, text=True)
+            if result.returncode == 0:
+                print(f"  ✅ Найден: {cmd}")
+                return cmd
+        
+        # Дополнительная диагностика
+        print("\n📋 Информация о системе:")
+        
+        # Проверка /etc/os-release
+        if os.path.exists('/etc/os-release'):
+            subprocess.run(['cat', '/etc/os-release'], capture_output=False)
+        
+        # Проверка /etc/redhat-release
+        if os.path.exists('/etc/redhat-release'):
+            subprocess.run(['cat', '/etc/redhat-release'], capture_output=False)
+        
+        # Проверка PATH
+        print(f"\nPATH: {os.environ.get('PATH', 'Not set')}")
+        
         return None
-    
-    def _run_command(self, cmd, check=False):
-        """Выполняет команду и возвращает результат"""
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            return result
-        except subprocess.TimeoutExpired:
-            print(f"  ⚠️ Команда {' '.join(cmd)} превысила таймаут")
-            return None
     
     def install_bind(self):
         """Устанавливает DNS сервер"""
-        print("=" * 50)
+        print("\n" + "=" * 60)
         print("1. УСТАНОВКА DNS СЕРВЕРА")
-        print("=" * 50)
+        print("=" * 60)
         
         if not self.package_manager:
             print("❌ Не удалось определить пакетный менеджер")
+            print("\n💡 Установите вручную одной из команд:")
+            print("   sudo dnf install -y bind bind-utils      # RHEL/CentOS/Fedora")
+            print("   sudo yum install -y bind bind-utils      # CentOS 7")
+            print("   sudo apt install -y bind9 bind9utils     # Ubuntu/Debian")
+            
+            response = input("\nУстановить вручную? (y/n): ")
+            if response.lower() == 'y':
+                print("\nПожалуйста, выполните установку в другом терминале,")
+                print("затем вернитесь и нажмите Enter")
+                input("Нажмите Enter после установки...")
+                
+                # Проверяем, установлен ли bind
+                if os.path.exists('/usr/sbin/named') or os.path.exists('/usr/sbin/named-checkconf'):
+                    print("✅ Bind установлен")
+                    return True
+                else:
+                    print("❌ Bind не обнаружен")
+                    return False
             return False
         
-        if self.package_manager in ['dnf', 'yum']:
+        # Установка через пакетный менеджер
+        if self.package_manager in ['dnf', 'yum', 'microdnf']:
             cmd = [self.package_manager, 'install', '-y', 'bind', 'bind-utils']
         else:
-            cmd = ['apt', 'update']
-            self._run_command(cmd)
+            subprocess.run(['apt', 'update'], capture_output=True)
             cmd = ['apt', 'install', '-y', 'bind9', 'bind9utils', 'dnsutils']
             self.service_name = 'bind9'
         
         print(f"  📦 Установка через {self.package_manager}...")
-        result = self._run_command(cmd)
+        print(f"  Команда: {' '.join(cmd)}")
         
-        if result and result.returncode == 0:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
             print("  ✅ Установка завершена")
             return True
         else:
-            print("  ❌ Ошибка установки")
+            print(f"  ❌ Ошибка: {result.stderr}")
             return False
     
     def create_directories(self):
         """Создает необходимые директории"""
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("2. СОЗДАНИЕ ДИРЕКТОРИЙ")
-        print("=" * 50)
+        print("=" * 60)
         
         dirs = [
             '/etc/bind',
@@ -82,15 +111,20 @@ class DNSAutomation:
     
     def create_zone_file(self, domain, dns_ip, admin_email):
         """Создает файл прямой зоны"""
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("3. СОЗДАНИЕ ЗОНОВОГО ФАЙЛА")
-        print("=" * 50)
+        print("=" * 60)
         
         serial = datetime.now().strftime('%Y%m%d01')
         admin_email = admin_email.replace('@', '.')
         
+        # Корректируем домен - убираем www если он есть
+        if domain.startswith('www.'):
+            domain = domain[4:]
+            print(f"  ℹ️ Домен скорректирован: {domain}")
+        
         zone_content = f"""$TTL 3600
-@       IN SOA ns1.{domain}. {admin_email}. (
+@       IN SOA  ns1.{domain}. {admin_email}. (
     {serial}
     3600
     1800
@@ -99,22 +133,16 @@ class DNSAutomation:
 )
 
 ; Name Servers
-@       IN NS ns1.{domain}.
+@       IN NS   ns1.{domain}.
 
 ; A Records
-@       IN A {dns_ip}
-ns1     IN A {dns_ip}
-www     IN A {dns_ip}
-mail    IN A {dns_ip}
+@       IN A    {dns_ip}
+ns1     IN A    {dns_ip}
+www     IN A    {dns_ip}
 
-; CNAME Records
-ftp     IN CNAME www
-
-; MX Record
-@       IN MX 10 mail
-
-; TXT Record
-@       IN TXT "v=spf1 mx ~all"
+; Additional records (add more as needed)
+; mail    IN A    192.168.1.30
+; files   IN A    192.168.1.40
 """
         
         zone_file = f"/etc/bind/zones/db.{domain}"
@@ -124,27 +152,35 @@ ftp     IN CNAME www
         print(f"  ✅ Создан: {zone_file}")
         
         # Проверка зоны
-        result = self._run_command(['named-checkzone', domain, zone_file])
-        if result and result.returncode == 0:
+        result = subprocess.run(['named-checkzone', domain, zone_file], 
+                               capture_output=True, text=True)
+        
+        if result.returncode == 0:
             print("  ✅ Зона валидна")
         else:
-            print(f"  ⚠️ {result.stderr if result else 'Ошибка проверки'}")
+            print(f"  ⚠️ {result.stderr}")
         
         return True
     
     def create_reverse_zone(self, network, dns_ip, domain):
         """Создает файл обратной зоны"""
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("4. СОЗДАНИЕ ОБРАТНОЙ ЗОНЫ")
-        print("=" * 50)
+        print("=" * 60)
         
-        network_parts = network.split('.')
-        network_prefix = f"{network_parts[0]}.{network_parts[1]}.{network_parts[2]}"
+        # Корректируем сеть - убираем последний октет если есть
+        if network.count('.') == 3:
+            network_parts = network.split('.')
+            network = f"{network_parts[0]}.{network_parts[1]}.{network_parts[2]}"
+            print(f"  ℹ️ Сеть скорректирована: {network}")
+        else:
+            network_parts = network.split('.')
+        
         last_octet = dns_ip.split('.')[3]
         serial = datetime.now().strftime('%Y%m%d01')
         
         reverse_content = f"""$TTL 3600
-@       IN SOA ns1.{domain}. admin.{domain}. (
+@       IN SOA  ns1.{domain}. admin.{domain}. (
     {serial}
     3600
     1800
@@ -152,12 +188,12 @@ ftp     IN CNAME www
     3600
 )
 
-@       IN NS ns1.{domain}.
+@       IN NS   ns1.{domain}.
 
 {last_octet} IN PTR ns1.{domain}.
 """
         
-        reverse_file = f"/etc/bind/zones/db.{network_prefix}"
+        reverse_file = f"/etc/bind/zones/db.{network}"
         with open(reverse_file, 'w') as f:
             f.write(reverse_content)
         
@@ -166,12 +202,14 @@ ftp     IN CNAME www
     
     def configure_named(self, domain, dns_ip, network):
         """Настраивает named.conf"""
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("5. НАСТРОЙКА named.conf")
-        print("=" * 50)
+        print("=" * 60)
         
-        network_parts = network.split('.')
-        network_prefix = f"{network_parts[0]}.{network_parts[1]}.{network_parts[2]}"
+        # Корректируем сеть для обратной зоны
+        if network.count('.') == 3:
+            network_parts = network.split('.')
+            network_prefix = f"{network_parts[0]}.{network_parts[1]}.{network_parts[2]}"
         
         # Бэкап существующего конфига
         if os.path.exists('/etc/named.conf'):
@@ -181,14 +219,9 @@ ftp     IN CNAME www
         
         config_content = f"""options {{
     listen-on port 53 {{ any; }};
-    listen-on-v6 port 53 {{ any; }};
+    listen-on-v6 port 53 {{ none; }};
     directory "/var/named";
-    dump-file "/var/named/data/cache_dump.db";
-    statistics-file "/var/named/data/named_stats.txt";
-    memstatistics-file "/var/named/data/named_mem_stats.txt";
-    recursing-file "/var/named/data/named.recursing";
-    secroots-file "/var/named/data/named.secroots";
-    allow-recursion {{ 127.0.0.0/8; 192.168.0.0/16; 10.0.0.0/8; }};
+    allow-recursion {{ 127.0.0.0/8; {network}.0/24; }};
     allow-query {{ any; }};
     forwarders {{
         8.8.8.8;
@@ -226,81 +259,113 @@ include "/etc/named.root.key";
         print("  ✅ Создан /etc/named.conf")
         
         # Проверка конфигурации
-        result = self._run_command(['named-checkconf'])
-        if result and result.returncode == 0:
+        result = subprocess.run(['named-checkconf'], capture_output=True, text=True)
+        if result.returncode == 0:
             print("  ✅ Конфигурация валидна")
         else:
-            print(f"  ❌ Ошибка: {result.stderr if result else 'Unknown'}")
-            return False
+            print(f"  ⚠️ {result.stderr}")
         
         return True
     
     def configure_firewall(self):
         """Настраивает фаервол"""
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("6. НАСТРОЙКА ФАЕРВОЛА")
-        print("=" * 50)
+        print("=" * 60)
         
         # Firewalld
         if os.path.exists('/usr/bin/firewall-cmd'):
-            self._run_command(['firewall-cmd', '--permanent', '--add-service=dns'])
-            self._run_command(['firewall-cmd', '--reload'])
+            subprocess.run(['firewall-cmd', '--permanent', '--add-service=dns'], 
+                          capture_output=True)
+            subprocess.run(['firewall-cmd', '--reload'], capture_output=True)
             print("  ✅ Настроен firewalld")
             return True
         
         # UFW
         if os.path.exists('/usr/bin/ufw'):
-            self._run_command(['ufw', 'allow', '53/tcp'])
-            self._run_command(['ufw', 'allow', '53/udp'])
+            subprocess.run(['ufw', 'allow', '53/tcp'], capture_output=True)
+            subprocess.run(['ufw', 'allow', '53/udp'], capture_output=True)
             print("  ✅ Настроен ufw")
             return True
         
         # iptables
-        self._run_command(['iptables', '-A', 'INPUT', '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT'])
-        self._run_command(['iptables', '-A', 'INPUT', '-p', 'udp', '--dport', '53', '-j', 'ACCEPT'])
+        subprocess.run(['iptables', '-A', 'INPUT', '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT'], 
+                      capture_output=True)
+        subprocess.run(['iptables', '-A', 'INPUT', '-p', 'udp', '--dport', '53', '-j', 'ACCEPT'],
+                      capture_output=True)
         print("  ✅ Настроен iptables")
         
         return True
     
     def start_service(self):
         """Запускает DNS сервис"""
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("7. ЗАПУСК DNS СЕРВЕРА")
-        print("=" * 50)
+        print("=" * 60)
+        
+        # Определяем правильное имя сервиса
+        if os.path.exists('/usr/lib/systemd/system/named.service'):
+            service = 'named'
+        elif os.path.exists('/usr/lib/systemd/system/bind9.service'):
+            service = 'bind9'
+        else:
+            service = self.service_name
+        
+        print(f"  Сервис: {service}")
         
         # Enable and start
-        self._run_command(['systemctl', 'enable', self.service_name])
-        self._run_command(['systemctl', 'restart', self.service_name])
+        subprocess.run(['systemctl', 'enable', service], capture_output=True)
+        subprocess.run(['systemctl', 'restart', service], capture_output=True)
         
         # Check status
-        result = self._run_command(['systemctl', 'is-active', self.service_name])
+        result = subprocess.run(['systemctl', 'is-active', service], 
+                               capture_output=True, text=True)
         
-        if result and result.returncode == 0:
-            print(f"  ✅ {self.service_name} запущен")
+        if result.returncode == 0:
+            print(f"  ✅ {service} запущен")
             return True
         else:
-            print(f"  ❌ {self.service_name} не запущен")
+            print(f"  ❌ {service} не запущен")
+            # Показываем статус для диагностики
+            subprocess.run(['systemctl', 'status', service], capture_output=False)
             return False
     
     def test_dns(self, domain, dns_ip):
         """Тестирует DNS сервер"""
-        print("\n" + "=" * 50)
+        print("\n" + "=" * 60)
         print("8. ТЕСТИРОВАНИЕ")
-        print("=" * 50)
+        print("=" * 60)
+        
+        # Корректируем домен
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        
+        # Ждем немного для запуска сервера
+        import time
+        time.sleep(2)
         
         # Тест с nslookup
-        result = self._run_command(['nslookup', domain, '127.0.0.1'])
+        result = subprocess.run(['nslookup', domain, '127.0.0.1'], 
+                               capture_output=True, text=True)
         
-        if result and domain in result.stdout:
+        if domain in result.stdout:
             print(f"  ✅ nslookup: {domain} -> OK")
         else:
-            print(f"  ⚠️ nslookup: {result.stdout if result else 'No output'}")
+            print(f"  ⚠️ nslookup: {result.stdout[:200] if result.stdout else 'No output'}")
         
         # Тест с dig
-        result = self._run_command(['dig', f'@{dns_ip}', domain, '+short'])
+        result = subprocess.run(['dig', f'@{dns_ip}', domain, '+short'], 
+                               capture_output=True, text=True)
         
-        if result and result.stdout.strip():
+        if result.stdout.strip():
             print(f"  ✅ dig: {domain} -> {result.stdout.strip()}")
+        
+        # Тест www
+        result = subprocess.run(['dig', f'@{dns_ip}', f'www.{domain}', '+short'], 
+                               capture_output=True, text=True)
+        
+        if result.stdout.strip():
+            print(f"  ✅ dig: www.{domain} -> {result.stdout.strip()}")
         
         return True
     
@@ -312,18 +377,25 @@ include "/etc/named.root.key";
         
         # Проверка прав
         if os.geteuid() != 0:
-            print("❌ Запустите с правами root: sudo python3 dns_auto.py")
+            print("❌ Запустите с правами root: sudo python3 pp.py")
             return False
         
-        # Ввод параметров
+        # Ввод параметров с подсказками
         print("\n📋 ВВЕДИТЕ ПАРАМЕТРЫ:")
         print("-" * 40)
+        print("Пример: домен = mycompany.local, IP = 192.168.1.10, сеть = 192.168.1")
+        print()
         
-        domain = input("Домен (например, example.com): ").strip()
+        domain = input("Домен (например, mycompany.local): ").strip()
         if not domain:
-            domain = "example.com"
+            domain = "mycompany.local"
         
-        dns_ip = input(f"IP адрес этого сервера (для {domain}): ").strip()
+        # Убираем www если ввели
+        if domain.startswith('www.'):
+            domain = domain[4:]
+            print(f"  (исправлено: {domain})")
+        
+        dns_ip = input(f"IP адрес этого сервера: ").strip()
         if not dns_ip:
             dns_ip = "192.168.1.10"
         
@@ -331,9 +403,9 @@ include "/etc/named.root.key";
         if not admin_email:
             admin_email = "admin@example.com"
         
-        network = input("Ваша сеть (например, 192.168.1.0): ").strip()
+        network = input("Сеть (первые 3 октета, например 192.168.1): ").strip()
         if not network:
-            network = "192.168.1.0"
+            network = "192.168.1"
         
         print(f"\n📋 НАСТРОЙКИ:")
         print(f"  • Домен: {domain}")
@@ -361,6 +433,9 @@ include "/etc/named.root.key";
         for step in steps:
             if not step():
                 print("\n❌ Ошибка на одном из этапов")
+                print("\n💡 Попробуйте установить вручную:")
+                print("   sudo dnf install -y bind bind-utils")
+                print("   sudo systemctl start named")
                 return False
         
         # Финальный вывод
@@ -373,17 +448,14 @@ include "/etc/named.root.key";
   • Домен: {domain}
   • Конфиг: /etc/named.conf
   • Зоны: /etc/bind/zones/
-  • Логи: /var/log/named/
 
 💡 ПРОВЕРКА РАБОТЫ:
   nslookup {domain} {dns_ip}
+  nslookup www.{domain} {dns_ip}
   dig @{dns_ip} {domain}
-  systemctl status {self.service_name}
 
-🔧 УПРАВЛЕНИЕ:
-  sudo systemctl restart {service_name}
-  sudo systemctl status {service_name}
-  sudo tail -f /var/log/named/named.log
+🔧 НАСТРОЙКА КЛИЕНТОВ:
+  На других компьютерах укажите DNS: {dns_ip}
 """)
         
         return True
