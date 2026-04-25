@@ -52,14 +52,7 @@ class DNSInstaller:
             return 'debian'
         except subprocess.CalledProcessError:
             pass
-        
-        try:
-            # Проверка yum (CentOS/RHEL)
-            subprocess.run(['which', 'yum'], check=True, capture_output=True)
-            return 'rhel'
-        except subprocess.CalledProcessError:
-            pass
-        
+
         try:
             # Проверка dnf (Fedora/RHEL8+)
             subprocess.run(['which', 'dnf'], check=True, capture_output=True)
@@ -90,11 +83,6 @@ class DNSInstaller:
             'debian': [
                 ['apt-get', 'update'],
                 ['apt-get', 'install', '-y', 'bind9', 'bind9utils', 'bind9-doc', 'dnsutils'],
-                ['systemctl', 'enable', 'named'],
-                ['systemctl', 'start', 'named']
-            ],
-            'rhel': [
-                ['yum', 'install', '-y', 'bind', 'bind-utils'],
                 ['systemctl', 'enable', 'named'],
                 ['systemctl', 'start', 'named']
             ],
