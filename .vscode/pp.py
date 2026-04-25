@@ -243,7 +243,7 @@ class ServerMonitor:
         if memory >= thresholds['memory_critical']:
             alerts.append({'level': 'CRITICAL', 'metric': 'Memory', 'value': memory})
         elif memory >= thresholds['memory_warning']:
-            alerts.append({'level':WARNING', 'metric': 'Memory', 'value': memory})
+            alerts.append({'level':'WARNING', 'metric': 'Memory', 'value': memory})
         
         return alerts
     
