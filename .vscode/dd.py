@@ -503,3 +503,46 @@ def main():
 
 if __name__ == "__main__":
     main()
+# Добавьте в конец файла dd.py после main()
+
+def copy_reports_to_shared():
+    """Копирование отчетов в общую папку"""
+    import shutil
+    import glob
+    
+    # Поиск общей папки
+    shared_folders = [
+        '/mnt/shared',
+        '/media/sf_shared',
+        '/media/sf_Shared'
+    ]
+    
+    shared_path = None
+    for path in shared_folders:
+        if os.path.exists(path):
+            shared_path = path
+            break
+    
+    if shared_path:
+        # Создаем папку для отчетов
+        reports_dir = os.path.join(shared_path, 'linux_reports')
+        os.makedirs(reports_dir, exist_ok=True)
+        
+        # Копируем все JSON отчеты
+        for report_file in glob.glob('linux_report_*.json'):
+            dest = os.path.join(reports_dir, report_file)
+            shutil.copy2(report_file, dest)
+            print(f"📁 Отчет скопирован в общую папку: {dest}")
+        
+        # Также копируем последний отчет как current_report.json
+        newest_report = max(glob.glob('linux_report_*.json'), key=os.path.getctime, default=None)
+        if newest_report:
+            shutil.copy2(newest_report, os.path.join(reports_dir, 'current_report.json'))
+            print(f"📁 Обновлен current_report.json")
+    else:
+        print("⚠️ Общая папка не найдена, отчеты сохранены локально")
+
+# Замените вызов main() на:
+if __name__ == "__main__":
+    main()
+    copy_reports_to_shared()
