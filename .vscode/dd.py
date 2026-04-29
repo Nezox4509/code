@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Скрипт для автоматизированного сбора основных параметров системы Linux
+С добавленной информацией об IP-адресах и статусе приложений
 """
 
 import os
@@ -11,6 +12,8 @@ import platform
 import subprocess
 from datetime import datetime
 import json
+import socket
+import re
 
 class LinuxSystemMonitor:
     """Класс для мониторинга основных параметров Linux системы"""
@@ -92,29 +95,88 @@ class LinuxSystemMonitor:
         except Exception as e:
             return {'error': str(e)}
     
-    def get_network_info(self):
-        """Получение информации о сети"""
+    def get_ip_addresses(self):
+        """Получение всех IP-адресов системы"""
+        ip_info = {
+            'ipv4': [],
+            'ipv6': [],
+            'default_interface': {},
+            'public_ip': None
+        }
+        
         try:
-            network_info = {}
-            # Сбор информации о сетевых интерфейсах
+            # Получение IP-адресов через socket
+            hostname = socket.gethostname()
+            
+            # Получение всех интерфейсов через netifaces или через psutil
             net_if_addrs = psutil.net_if_addrs()
-            net_if_stats = psutil.net_if_stats()
             
             for interface, addrs in net_if_addrs.items():
-                network_info[interface] = {
-                    'is_up': net_if_stats[interface].isup if interface in net_if_stats else False,
-                    'speed': f"{net_if_stats[interface].speed} Mbps" if interface in net_if_stats and net_if_stats[interface].speed > 0 else "Unknown",
-                    'addresses': []
-                }
                 for addr in addrs:
-                    network_info[interface]['addresses'].append({
-                        'family': str(addr.family),
-                        'address': addr.address,
-                        'netmask': addr.netmask,
-                        'broadcast': addr.broadcast
-                    })
+                    if addr.family == socket.AF_INET:  # IPv4
+                        ip_info['ipv4'].append({
+                            'interface': interface,
+                            'ip': addr.address,
+                            'netmask': addr.netmask,
+                            'broadcast': addr.broadcast
+                        })
+                    elif addr.family == socket.AF_INET6:  # IPv6
+                        if not addr.address.startswith('fe80:'):  # Исключаем link-local
+                            ip_info['ipv6'].append({
+                                'interface': interface,
+                                'ip': addr.address,
+                                'netmask': addr.netmask
+                            })
             
-            # Сбор статистики по сети
+            # Определение основного интерфейса и IP
+            try:
+                # Получаем IP по умолчанию через подключение к внешнему серверу
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.connect(("8.8.8.8", 80))
+                    default_ip = s.getsockname()[0]
+                    ip_info['default_interface']['ip'] = default_ip
+                    
+                    # Находим интерфейс для этого IP
+                    for iface_info in ip_info['ipv4']:
+                        if iface_info['ip'] == default_ip:
+                            ip_info['default_interface']['interface'] = iface_info['interface']
+                            break
+            except Exception:
+                ip_info['default_interface']['ip'] = '127.0.0.1'
+                ip_info['default_interface']['interface'] = 'lo'
+            
+            # Получение публичного IP через внешний сервис
+            try:
+                result = subprocess.run(
+                    ['curl', '-s', 'https://api.ipify.org'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0 and result.stdout:
+                    ip_info['public_ip'] = result.stdout.strip()
+            except Exception:
+                ip_info['public_ip'] = 'Unable to determine'
+                
+        except Exception as e:
+            ip_info['error'] = str(e)
+        
+        return ip_info
+    
+    def get_network_info(self):
+        """Получение информации о сети (дополнительно к IP)"""
+        try:
+            network_info = {}
+            net_if_stats = psutil.net_if_stats()
+            
+            for interface, stats in net_if_stats.items():
+                network_info[interface] = {
+                    'is_up': stats.isup,
+                    'speed': f"{stats.speed} Mbps" if stats.speed > 0 else "Unknown",
+                    'mtu': stats.mtu
+                }
+            
+            # Статистика сети
             net_io = psutil.net_io_counters()
             network_info['statistics'] = {
                 'bytes_sent': self._bytes_to_gb(net_io.bytes_sent),
@@ -131,13 +193,110 @@ class LinuxSystemMonitor:
         except Exception as e:
             return {'error': str(e)}
     
+    def check_applications_status(self, applications=None):
+        """
+        Проверка статуса запущенных приложений
+        applications: список приложений для проверки (если None - проверяет популярные)
+        """
+        if applications is None:
+            # Список популярных приложений для проверки
+            applications = [
+                'nginx', 'apache2', 'httpd', 'mysql', 'mariadb', 'postgresql',
+                'redis', 'mongodb', 'docker', 'kubelet', 'jenkins', 'gitlab',
+                'prometheus', 'grafana', 'elasticsearch', 'kibana', 'logstash',
+                'tomcat', 'node', 'python', 'java', 'ssh', 'sshd', 'cron',
+                'firewalld', 'ufw', 'fail2ban', 'zabbix_agent', 'nagios'
+            ]
+        
+        app_status = {}
+        
+        # Проверка через systemctl (для systemd систем)
+        try:
+            for app in applications:
+                app_status[app] = {
+                    'is_running': False,
+                    'status': 'not_found',
+                    'pid': None,
+                    'service_type': None,
+                    'ports': []
+                }
+                
+                # Проверка через systemctl
+                try:
+                    result = subprocess.run(
+                        ['systemctl', 'is-active', app],
+                        capture_output=True,
+                        text=True,
+                        timeout=3
+                    )
+                    if result.returncode == 0 and result.stdout.strip() == 'active':
+                        app_status[app]['is_running'] = True
+                        app_status[app]['status'] = 'active'
+                        app_status[app]['service_type'] = 'systemd'
+                except:
+                    pass
+                
+                # Поиск процессов
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    try:
+                        proc_name = proc.info['name'].lower() if proc.info['name'] else ''
+                        cmdline = ' '.join(proc.info['cmdline']).lower() if proc.info['cmdline'] else ''
+                        
+                        if app.lower() in proc_name or app.lower() in cmdline:
+                            app_status[app]['is_running'] = True
+                            app_status[app]['pid'] = proc.info['pid']
+                            if not app_status[app]['service_type']:
+                                app_status[app]['service_type'] = 'process'
+                            
+                            # Попытка найти порты, которые слушает процесс
+                            try:
+                                connections = psutil.net_connections()
+                                for conn in connections:
+                                    if conn.pid == proc.info['pid'] and conn.status == 'LISTEN':
+                                        app_status[app]['ports'].append(conn.laddr.port)
+                            except:
+                                pass
+                            break
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                # Если приложение не найдено, проверяем через which
+                if not app_status[app]['is_running']:
+                    try:
+                        result = subprocess.run(
+                            ['which', app],
+                            capture_output=True,
+                            text=True,
+                            timeout=2
+                        )
+                        if result.returncode == 0:
+                            app_status[app]['status'] = 'installed_not_running'
+                        else:
+                            app_status[app]['status'] = 'not_installed'
+                    except:
+                        app_status[app]['status'] = 'unknown'
+                        
+        except Exception as e:
+            return {'error': str(e)}
+        
+        return app_status
+    
+    def check_custom_services(self, services_list):
+        """
+        Проверка статуса пользовательского списка сервисов
+        services_list: список названий сервисов для проверки
+        """
+        return self.check_applications_status(services_list)
+    
     def get_process_info(self, top_n=10):
         """Получение информации о топ процессах по CPU и памяти"""
         try:
             processes = []
-            for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'status']):
+            for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'status', 'create_time']):
                 try:
-                    processes.append(proc.info)
+                    proc_info = proc.info
+                    proc_info['create_time'] = datetime.fromtimestamp(proc_info['create_time']).strftime('%Y-%m-%d %H:%M:%S')
+                    processes.append(proc_info)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
             
@@ -178,6 +337,13 @@ class LinuxSystemMonitor:
         except:
             stats['boot_time'] = "N/A"
         
+        # Информация о пользователях
+        try:
+            users = subprocess.check_output(['who'], text=True).strip().split('\n')
+            stats['logged_users'] = len([u for u in users if u.strip()])
+        except:
+            stats['logged_users'] = 0
+        
         return stats
     
     def _bytes_to_gb(self, bytes_value):
@@ -194,7 +360,9 @@ class LinuxSystemMonitor:
             'cpu_info': self.get_cpu_info(),
             'memory_info': self.get_memory_info(),
             'disk_info': self.get_disk_info(),
+            'ip_addresses': self.get_ip_addresses(),
             'network_info': self.get_network_info(),
+            'applications_status': self.check_applications_status(),
             'process_info': self.get_process_info(),
             'system_stats': self.get_system_stats()
         }
@@ -206,18 +374,37 @@ class LinuxSystemMonitor:
         if not self.system_info:
             self.collect_all_info()
         
-        print("="*60)
+        print("="*70)
         print(f"📊 ОТЧЕТ ПО СИСТЕМЕ LINUX")
-        print("="*60)
+        print("="*70)
         print(f"📅 Время сбора: {self.system_info['timestamp']}")
         print(f"🖥️  Хост: {self.system_info['os_info']['hostname']}")
         print(f"🐧 ОС: {self.system_info['os_info']['os_full']}")
         print(f"🏗️ Архитектура: {self.system_info['os_info']['architecture']}")
         print(f"⏱️ Время работы: {self.system_info['system_stats']['uptime']}")
+        print(f"👥 Пользователей онлайн: {self.system_info['system_stats']['logged_users']}")
         
-        print("\n" + "="*60)
+        print("\n" + "="*70)
+        print("🌐 IP-АДРЕСА")
+        print("="*70)
+        ip_info = self.system_info['ip_addresses']
+        if 'error' not in ip_info:
+            print(f"🌍 Публичный IP: {ip_info['public_ip']}")
+            print(f"🔗 Основной интерфейс: {ip_info['default_interface'].get('interface', 'N/A')} - {ip_info['default_interface'].get('ip', 'N/A')}")
+            
+            if ip_info['ipv4']:
+                print("\n📡 IPv4 адреса:")
+                for ip in ip_info['ipv4']:
+                    print(f"   • {ip['interface']}: {ip['ip']} / {ip['netmask']}")
+            
+            if ip_info['ipv6']:
+                print("\n📡 IPv6 адреса:")
+                for ip in ip_info['ipv6']:
+                    print(f"   • {ip['interface']}: {ip['ip']}")
+        
+        print("\n" + "="*70)
         print("💻 CPU ИНФОРМАЦИЯ")
-        print("="*60)
+        print("="*70)
         cpu_info = self.system_info['cpu_info']
         if 'error' not in cpu_info:
             print(f"Ядер (физических): {cpu_info['physical_cores']}")
@@ -226,29 +413,64 @@ class LinuxSystemMonitor:
             print(f"Общая загрузка CPU: {cpu_info['total_cpu_usage']}")
             print(f"Load Average: {', '.join(cpu_info['load_average'])}")
         
-        print("\n" + "="*60)
+        print("\n" + "="*70)
         print("🧠 ПАМЯТЬ")
-        print("="*60)
+        print("="*70)
         mem_info = self.system_info['memory_info']
         if 'error' not in mem_info:
             print(f"ОЗУ: {mem_info['ram_used']} / {mem_info['ram_total']} ({mem_info['ram_percentage']})")
             print(f"Swap: {mem_info['swap_used']} / {mem_info['swap_total']} ({mem_info['swap_percentage']})")
         
-        print("\n" + "="*60)
+        print("\n" + "="*70)
         print("💾 ДИСКИ")
-        print("="*60)
+        print("="*70)
         for disk in self.system_info['disk_info']:
             if 'error' not in disk:
                 print(f"{disk['device']} - {disk['mountpoint']}")
                 print(f"  Использовано: {disk['used_space']} / {disk['total_space']} ({disk['usage_percentage']})")
                 print(f"  ФС: {disk['file_system']}")
         
-        # Топ процессов
-        print("\n" + "="*60)
+        print("\n" + "="*70)
+        print("📦 СТАТУС ПРИЛОЖЕНИЙ")
+        print("="*70)
+        apps = self.system_info['applications_status']
+        if 'error' not in apps:
+            running_apps = []
+            installed_apps = []
+            not_installed_apps = []
+            
+            for app, status in apps.items():
+                if status['is_running']:
+                    ports_str = f" (порты: {', '.join(map(str, status['ports']))})" if status['ports'] else ""
+                    running_apps.append(f"  ✅ {app}{ports_str}")
+                elif status['status'] == 'installed_not_running':
+                    installed_apps.append(f"  ⚠️ {app} (установлен, но не запущен)")
+                elif status['status'] == 'not_installed':
+                    not_installed_apps.append(f"  ❌ {app}")
+            
+            if running_apps:
+                print("🟢 ЗАПУЩЕНЫ:")
+                for app in running_apps[:10]:  # Показываем первые 10
+                    print(app)
+                if len(running_apps) > 10:
+                    print(f"  ... и еще {len(running_apps) - 10}")
+            
+            if installed_apps:
+                print("\n🟡 УСТАНОВЛЕНЫ (НЕ ЗАПУЩЕНЫ):")
+                for app in installed_apps[:5]:
+                    print(app)
+            
+            # Краткая статистика
+            print(f"\n📊 Статистика: Запущено: {len(running_apps)}, Установлено: {len(installed_apps)}, Не установлено: {len(not_installed_apps)}")
+        
+        # Топ процессов (только запущенные)
+        print("\n" + "="*70)
         print("🔥 ТОП 5 ПРОЦЕССОВ ПО CPU")
-        print("="*60)
+        print("="*70)
         for i, proc in enumerate(self.system_info['process_info']['top_cpu_processes'][:5], 1):
-            print(f"{i}. PID: {proc['pid']} - {proc['name']} (CPU: {proc['cpu_percent']}%)")
+            cpu = proc['cpu_percent'] if proc['cpu_percent'] is not None else 0
+            mem = proc['memory_percent'] if proc['memory_percent'] is not None else 0
+            print(f"{i}. PID: {proc['pid']} - {proc['name']} (CPU: {cpu}%, MEM: {mem:.1f}%)")
     
     def save_to_json(self, filename=None):
         """Сохранение отчета в JSON файл"""
@@ -259,7 +481,7 @@ class LinuxSystemMonitor:
             filename = f"linux_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         
         with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(self.system_info, f, indent=2, ensure_ascii=False)
+            json.dump(self.system_info, f, indent=2, ensure_ascii=False, default=str)
         
         print(f"\n✅ Отчет сохранен в файл: {filename}")
         return filename
