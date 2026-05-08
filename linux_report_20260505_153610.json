@@ -1,0 +1,524 @@
+{
+  "timestamp": "2026-05-05 15:36:05",
+  "os_info": {
+    "system": "Windows",
+    "hostname": "LAPTOP-IOK69POA",
+    "release": "11",
+    "version": "10.0.26200",
+    "architecture": "AMD64",
+    "processor": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
+    "os_full": "Windows 11"
+  },
+  "cpu_info": {
+    "error": "module 'os' has no attribute 'getloadavg'"
+  },
+  "memory_info": {
+    "ram_total": "15.73 GB",
+    "ram_available": "6.16 GB",
+    "ram_used": "9.56 GB",
+    "ram_percentage": "60.8%",
+    "swap_total": "3.62 GB",
+    "swap_used": "0.07 GB",
+    "swap_percentage": "2.0%",
+    "ram_detailed": {
+      "total_bytes": 16888094720,
+      "available_bytes": 6619013120,
+      "used_bytes": 10269081600,
+      "free_bytes": 6619013120
+    }
+  },
+  "disk_info": [
+    {
+      "device": "C:\\",
+      "mountpoint": "C:\\",
+      "file_system": "NTFS",
+      "total_space": "200.00 GB",
+      "used_space": "94.66 GB",
+      "free_space": "105.34 GB",
+      "usage_percentage": "47.3%"
+    },
+    {
+      "device": "D:\\",
+      "mountpoint": "D:\\",
+      "file_system": "NTFS",
+      "total_space": "733.66 GB",
+      "used_space": "18.06 GB",
+      "free_space": "715.60 GB",
+      "usage_percentage": "2.5%"
+    }
+  ],
+  "ip_addresses": {
+    "ipv4": [
+      {
+        "interface": "Ethernet 2",
+        "ip": "192.168.56.1",
+        "netmask": "255.255.255.0",
+        "broadcast": null
+      },
+      {
+        "interface": "Подключение по локальной сети* 1",
+        "ip": "169.254.165.158",
+        "netmask": "255.255.0.0",
+        "broadcast": null
+      },
+      {
+        "interface": "Подключение по локальной сети* 2",
+        "ip": "169.254.171.251",
+        "netmask": "255.255.0.0",
+        "broadcast": null
+      },
+      {
+        "interface": "Беспроводная сеть",
+        "ip": "10.15.214.176",
+        "netmask": "255.255.224.0",
+        "broadcast": null
+      },
+      {
+        "interface": "Сетевое подключение Bluetooth",
+        "ip": "169.254.200.195",
+        "netmask": "255.255.0.0",
+        "broadcast": null
+      },
+      {
+        "interface": "Loopback Pseudo-Interface 1",
+        "ip": "127.0.0.1",
+        "netmask": "255.0.0.0",
+        "broadcast": null
+      }
+    ],
+    "ipv6": [
+      {
+        "interface": "Loopback Pseudo-Interface 1",
+        "ip": "::1",
+        "netmask": null
+      }
+    ],
+    "default_interface": {
+      "ip": "10.15.214.176",
+      "interface": "Беспроводная сеть"
+    },
+    "public_ip": "94.231.29.1"
+  },
+  "network_info": {
+    "Сетевое подключение Bluetooth": {
+      "is_up": false,
+      "speed": "3 Mbps",
+      "mtu": 1500
+    },
+    "Ethernet 2": {
+      "is_up": true,
+      "speed": "1000 Mbps",
+      "mtu": 1500
+    },
+    "Loopback Pseudo-Interface 1": {
+      "is_up": true,
+      "speed": "1073 Mbps",
+      "mtu": 1500
+    },
+    "Беспроводная сеть": {
+      "is_up": true,
+      "speed": "144 Mbps",
+      "mtu": 1500
+    },
+    "Подключение по локальной сети* 1": {
+      "is_up": false,
+      "speed": "Unknown",
+      "mtu": 1500
+    },
+    "Подключение по локальной сети* 2": {
+      "is_up": false,
+      "speed": "Unknown",
+      "mtu": 1500
+    },
+    "statistics": {
+      "bytes_sent": "0.02 GB",
+      "bytes_recv": "0.06 GB",
+      "packets_sent": 41620,
+      "packets_recv": 97896,
+      "errin": 0,
+      "errout": 0,
+      "dropin": 0,
+      "dropout": 0
+    }
+  },
+  "applications_status": {
+    "nginx": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "apache2": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "httpd": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "mysql": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "mariadb": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "postgresql": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "redis": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "mongodb": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "docker": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "kubelet": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "jenkins": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "gitlab": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "prometheus": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "grafana": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "elasticsearch": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "kibana": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "logstash": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "tomcat": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "node": {
+      "is_running": true,
+      "status": "not_found",
+      "pid": 4552,
+      "service_type": "process",
+      "ports": [
+        17070
+      ]
+    },
+    "python": {
+      "is_running": true,
+      "status": "not_found",
+      "pid": 2416,
+      "service_type": "process",
+      "ports": []
+    },
+    "java": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "ssh": {
+      "is_running": true,
+      "status": "not_found",
+      "pid": 4192,
+      "service_type": "process",
+      "ports": []
+    },
+    "sshd": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "cron": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "firewalld": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "ufw": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "fail2ban": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "zabbix_agent": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    },
+    "nagios": {
+      "is_running": false,
+      "status": "unknown",
+      "pid": null,
+      "service_type": null,
+      "ports": []
+    }
+  },
+  "process_info": {
+    "top_cpu_processes": [
+      {
+        "cpu_percent": 1054.8,
+        "create_time": "1970-01-01 09:00:00",
+        "status": "running",
+        "pid": 0,
+        "name": "System Idle Process",
+        "memory_percent": 4.850754413580172e-05
+      },
+      {
+        "cpu_percent": 36.7,
+        "create_time": "2026-05-05 15:35:59",
+        "status": "running",
+        "pid": 9384,
+        "name": "python.exe",
+        "memory_percent": 0.21607685535292875
+      },
+      {
+        "cpu_percent": 9.1,
+        "create_time": "2026-05-05 15:27:08",
+        "status": "running",
+        "pid": 5604,
+        "name": "Code.exe",
+        "memory_percent": 1.987936173773426
+      },
+      {
+        "cpu_percent": 5.9,
+        "create_time": "2026-05-05 15:27:08",
+        "status": "running",
+        "pid": 13848,
+        "name": "Code.exe",
+        "memory_percent": 1.7904377078245093
+      },
+      {
+        "cpu_percent": 5.8,
+        "create_time": "2026-05-05 03:14:57",
+        "status": "running",
+        "pid": 5388,
+        "name": "MsMpEng.exe",
+        "memory_percent": 2.3611289645822167
+      },
+      {
+        "cpu_percent": 3.0,
+        "create_time": "2026-05-05 15:27:07",
+        "status": "running",
+        "pid": 4688,
+        "name": "Code.exe",
+        "memory_percent": 0.9084492865752947
+      },
+      {
+        "cpu_percent": 2.9,
+        "create_time": "1970-01-01 09:00:00",
+        "status": "running",
+        "pid": 4,
+        "name": "System",
+        "memory_percent": 0.046542988598301756
+      },
+      {
+        "cpu_percent": 2.8,
+        "create_time": "2026-05-05 10:19:25",
+        "status": "running",
+        "pid": 10168,
+        "name": "explorer.exe",
+        "memory_percent": 2.4507223986010422
+      },
+      {
+        "cpu_percent": 2.3,
+        "create_time": "2026-05-05 03:14:56",
+        "status": "running",
+        "pid": 1648,
+        "name": "dwm.exe",
+        "memory_percent": 0.9287982013402635
+      },
+      {
+        "cpu_percent": 2.1,
+        "create_time": "2026-05-05 15:27:10",
+        "status": "running",
+        "pid": 18208,
+        "name": "Code.exe",
+        "memory_percent": 1.070318961356465
+      }
+    ],
+    "top_memory_processes": [
+      {
+        "cpu_percent": 0.0,
+        "create_time": "2026-05-05 15:27:14",
+        "status": "running",
+        "pid": 10716,
+        "name": "Code.exe",
+        "memory_percent": 3.6435471626724745
+      },
+      {
+        "cpu_percent": 0.0,
+        "create_time": "2026-05-05 03:14:56",
+        "status": "running",
+        "pid": 3192,
+        "name": "MemCompression",
+        "memory_percent": 3.64175238353945
+      },
+      {
+        "cpu_percent": 0.3,
+        "create_time": "2026-05-05 10:21:05",
+        "status": "running",
+        "pid": 15476,
+        "name": "WINWORD.EXE",
+        "memory_percent": 3.085395106073872
+      },
+      {
+        "cpu_percent": 0.0,
+        "create_time": "2026-05-05 15:13:00",
+        "status": "running",
+        "pid": 19900,
+        "name": "browser.exe",
+        "memory_percent": 2.4782989374422457
+      },
+      {
+        "cpu_percent": 2.8,
+        "create_time": "2026-05-05 10:19:25",
+        "status": "running",
+        "pid": 10168,
+        "name": "explorer.exe",
+        "memory_percent": 2.4507223986010422
+      },
+      {
+        "cpu_percent": 0.0,
+        "create_time": "2026-05-05 11:07:30",
+        "status": "running",
+        "pid": 9760,
+        "name": "steamwebhelper.exe",
+        "memory_percent": 2.394380886087309
+      },
+      {
+        "cpu_percent": 5.8,
+        "create_time": "2026-05-05 03:14:57",
+        "status": "running",
+        "pid": 5388,
+        "name": "MsMpEng.exe",
+        "memory_percent": 2.3611289645822167
+      },
+      {
+        "cpu_percent": 9.1,
+        "create_time": "2026-05-05 15:27:08",
+        "status": "running",
+        "pid": 5604,
+        "name": "Code.exe",
+        "memory_percent": 1.987936173773426
+      },
+      {
+        "cpu_percent": 5.9,
+        "create_time": "2026-05-05 15:27:08",
+        "status": "running",
+        "pid": 13848,
+        "name": "Code.exe",
+        "memory_percent": 1.7904377078245093
+      },
+      {
+        "cpu_percent": 1.3,
+        "create_time": "2026-05-05 15:27:10",
+        "status": "running",
+        "pid": 4552,
+        "name": "Code.exe",
+        "memory_percent": 1.480838307377755
+      }
+    ],
+    "total_processes": 271
+  },
+  "system_stats": {
+    "uptime": "N/A",
+    "kernel": "N/A",
+    "boot_time": "2026-05-05 03:14:44",
+    "logged_users": 0
+  }
+}
